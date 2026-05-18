@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContaVision — Meu Painel</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@300;400;500;700;800&family=Lora:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0b0f1a;
+  --surface: #111827;
+  --surface2: #1a2236;
+  --border: #1f2d42;
+  --text: #e8edf5;
+  --muted: #6b7fa3;
+  --accent: #4f8ef7;
+  --accent-glow: rgba(79,142,247,0.15);
+  --green: #34d399;
+  --green-glow: rgba(52,211,153,0.12);
+  --orange: #fbbf24;
+  --red: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Cabinet Grotesk', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* ── AUTH ── */
+#auth-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  background-image: radial-gradient(ellipse at 20% 50%, rgba(79,142,247,0.07) 0%, transparent 60%),
+                    radial-gradient(ellipse at 80% 20%, rgba(52,211,153,0.05) 0%, transparent 50%);
+}
+.auth-box { background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 3rem; width: 100%; max-width: 420px; }
+.auth-brand { font-family: 'Lora', serif; font-size: 1.8rem; font-style: italic; color: var(--accent); margin-bottom: 0.3rem; }
+.auth-brand span { color: var(--green); font-style: normal; }
+.auth-tagline { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; font-weight: 300; }
+.auth-box h2 { font-size: 1.2rem; font-weight: 700; margin-bottom: 1.5rem; }
+.field { margin-bottom: 1.1rem; }
+.field label { display: block; font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
+.field input { width: 100%; padding: 0.8rem 1rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-family: 'Cabinet Grotesk', sans-serif; font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+.field input:focus { border-color: var(--accent); }
+.btn-login { width: 100%; padding: 0.9rem; background: var(--accent); color: #fff; border: none; border-radius: 10px; font-family: 'Cabinet Grotesk', sans-serif; font-size: 1rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+.btn-login:hover { filter: brightness(1.15); transform: translateY(-1px); }
+.auth-error { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.25); color: var(--red); border-radius: 8px; padding: 0.7rem 1rem; font-size: 0.85rem; margin-top: 1rem; display: none; }
+
+/* ── APP ── */
+#app { display: none; }
+
+.header {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-brand { font-family: 'Lora', serif; font-style: italic; font-size: 1.3rem; color: var(--accent); }
+.header-brand span { color: var(--green); font-style: normal; }
+.header-right { display: flex; align-items: center; gap: 1rem; }
+.company-pill { background: var(--accent-glow); border: 1px solid rgba(79,142,247,0.25); color: var(--accent); border-radius: 20px; padding: 0.35rem 0.9rem; font-size: 0.82rem; font-weight: 700; }
+.btn-out { background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 0.4rem 0.9rem; font-family: 'Cabinet Grotesk', sans-serif; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; }
+.btn-out:hover { border-color: var(--red); color: var(--red); }
+
+.body { max-width: 1300px; margin: 0 auto; padding: 2rem; }
+
+/* ── PERIOD SELECTOR ── */
+.period-bar {
+  display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem;
+  overflow-x: auto; padding-bottom: 0.5rem;
+}
+.period-pill {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+  padding: 0.5rem 1.1rem; font-size: 0.85rem; font-weight: 500; color: var(--muted);
+  cursor: pointer; white-space: nowrap; transition: all 0.15s; flex-shrink: 0;
+}
+.period-pill:hover { border-color: var(--accent); color: var(--text); }
+.period-pill.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+.period-label { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+
+/* ── KPI GRID ── */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+.kpi {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 1.4rem; position: relative; overflow: hidden;
+  animation: rise 0.5s ease both;
+}
+.kpi::after { content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity 0.2s; }
+.kpi:hover::after { opacity: 1; }
+.kpi.blue { box-shadow: inset 0 0 0 1px rgba(79,142,247,0.15); }
+.kpi.blue::after { background: radial-gradient(ellipse at 80% 0%, rgba(79,142,247,0.06), transparent 60%); }
+.kpi.green { box-shadow: inset 0 0 0 1px rgba(52,211,153,0.15); }
+.kpi.green::after { background: radial-gradient(ellipse at 80% 0%, rgba(52,211,153,0.06), transparent 60%); }
+.kpi.orange { box-shadow: inset 0 0 0 1px rgba(251,191,36,0.15); }
+.kpi.red { box-shadow: inset 0 0 0 1px rgba(248,113,113,0.15); }
+.kpi-tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.5rem; }
+.kpi-val { font-size: 1.7rem; font-weight: 800; line-height: 1; margin-bottom: 0.3rem; }
+.kpi.blue .kpi-val { color: var(--accent); }
+.kpi.green .kpi-val { color: var(--green); }
+.kpi.orange .kpi-val { color: var(--orange); }
+.kpi.red .kpi-val { color: var(--red); }
+.kpi-note { font-size: 0.8rem; color: var(--muted); }
+
+/* ── CHARTS ── */
+.chart-grid { display: grid; grid-template-columns: 3fr 2fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+.chart-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+@media(max-width:900px) { .chart-grid, .chart-grid-3 { grid-template-columns: 1fr; } }
+
+.chart-box { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; animation: rise 0.6s ease both; }
+.ch-title { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 0.2rem; }
+.ch-sub { font-size: 0.78rem; color: var(--muted); margin-bottom: 1.2rem; opacity: 0.7; }
+canvas { max-height: 260px; }
+
+/* ── COMPARE BANNER ── */
+.compare-box { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem 1.5rem; margin-bottom: 2rem; display: none; }
+.compare-box.show { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+.compare-item { display: flex; flex-direction: column; gap: 0.2rem; }
+.compare-label { font-size: 0.73rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 700; }
+.compare-val { font-size: 1.1rem; font-weight: 800; }
+.compare-delta { font-size: 0.82rem; font-weight: 700; }
+.delta-up { color: var(--green); } .delta-down { color: var(--red); }
+.compare-divider { width: 1px; height: 40px; background: var(--border); }
+
+/* ── FOOTER ── */
+.dash-footer { text-align: center; padding: 2rem; color: var(--muted); font-size: 0.78rem; border-top: 1px solid var(--border); margin-top: 2rem; }
+
+.empty { text-align: center; padding: 4rem; color: var(--muted); }
+.empty-icon { font-size: 3rem; margin-bottom: 1rem; }
+
+@keyframes rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-brand">Conta<span>Vision</span></div>
+    <div class="auth-tagline">Portal do Cliente · Seus relatórios contábeis</div>
+    <h2>Acessar meu painel</h2>
+    <div class="field"><label>E-mail</label><input type="email" id="a-email" placeholder="seu@email.com"></div>
+    <div class="field"><label>Senha</label><input type="password" id="a-pass" placeholder="••••••••"></div>
+    <div class="auth-error" id="a-err"></div>
+    <button class="btn-login" onclick="login()">Entrar no painel →</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="header">
+    <div class="header-brand">Conta<span>Vision</span></div>
+    <div class="header-right">
+      <div class="company-pill" id="company-pill">—</div>
+      <button class="btn-out" onclick="logout()">Sair</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- Period selector -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.75rem">
+      <div>
+        <div style="font-size:1.4rem;font-weight:800" id="dash-title">Meu Painel Financeiro</div>
+        <div style="font-size:0.85rem;color:var(--muted);margin-top:0.2rem" id="dash-sub">Selecione um período abaixo</div>
+      </div>
+    </div>
+
+    <div class="period-bar" id="period-bar">
+      <span class="period-label">Competências:</span>
+    </div>
+
+    <!-- Compare banner -->
+    <div class="compare-box" id="compare-box"></div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <!-- Charts -->
+    <div class="chart-grid" id="chart-grid-main">
+      <div class="chart-box">
+        <div class="ch-title">Resultado do Exercício</div>
+        <div class="ch-sub">Receitas, custos e despesas do período</div>
+        <canvas id="ch-resultado"></canvas>
+      </div>
+      <div class="chart-box">
+        <div class="ch-title">Composição do Resultado</div>
+        <div class="ch-sub">Distribuição percentual</div>
+        <canvas id="ch-donut"></canvas>
+      </div>
+    </div>
+
+    <div class="chart-grid-3">
+      <div class="chart-box">
+        <div class="ch-title">Ativo</div>
+        <div class="ch-sub">Circulante vs Não Circulante</div>
+        <canvas id="ch-ativo"></canvas>
+      </div>
+      <div class="chart-box">
+        <div class="ch-title">Passivo + PL</div>
+        <div class="ch-sub">Fontes de capital</div>
+        <canvas id="ch-passivo"></canvas>
+      </div>
+      <div class="chart-box">
+        <div class="ch-title">Saúde Financeira</div>
+        <div class="ch-sub">Radar de indicadores</div>
+        <canvas id="ch-radar"></canvas>
+      </div>
+    </div>
+
+    <!-- Histórico de receitas (linha) -->
+    <div class="chart-box" id="trend-box" style="display:none;margin-bottom:1.5rem">
+      <div class="ch-title">Evolução Histórica</div>
+      <div class="ch-sub">Receita e resultado mês a mês</div>
+      <canvas id="ch-trend"></canvas>
+    </div>
+
+    <div class="dash-footer">
+      ContaVision · Relatório gerado com base no balancete importado pelo seu contador<br>
+      <small>As informações são de caráter gerencial e não substituem a assessoria contábil profissional.</small>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// ⚠️  CONFIGURE — mesmo valor do admin.html
+// ══════════════════════════════════════════
+const SUPABASE_URL = 'https://ebgmrbklckecjgdqxkpx.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImViZ21yYmtsY2tlY2pnZHF4a3B4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDc3MzIsImV4cCI6MjA5NDYyMzczMn0.FKHTCBNMfl3qtllT0gHXjByGtbyPJ738P4jkXIB5wa4';
+// ══════════════════════════════════════════
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let allBalancetes = [];
+let charts = {};
+
+// ── AUTH ──────────────────────────────────
+async function login() {
+  const email = document.getElementById('a-email').value.trim();
+  const pass  = document.getElementById('a-pass').value;
+  const { data, error } = await db.auth.signInWithPassword({ email, password: pass });
+  if (error) { const e=document.getElementById('a-err'); e.textContent=error.message; e.style.display='block'; return; }
+  await initApp(data.user);
+}
+
+async function logout() {
+  await db.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+db.auth.onAuthStateChange(async (_e, session) => { if (session?.user) await initApp(session.user); });
+
+async function initApp(user) {
+  currentUser = user;
+  const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
+  document.getElementById('company-pill').textContent = profile?.company || profile?.name || user.email;
+  document.getElementById('dash-title').textContent = profile?.company || 'Meu Painel';
+
+  // Detecta se veio de link direto (?id=...&period=...)
+  const params = new URLSearchParams(location.search);
+  const directId = params.get('id');
+  const directPeriod = params.get('period');
+  const clientId = directId || user.id;
+
+  const { data: bals } = await db.from('balancetes').select('*').eq('client_id', clientId).order('period', { ascending: false });
+  allBalancetes = bals || [];
+
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  buildPeriodBar(directPeriod);
+  buildTrendChart();
+}
+
+// ── PERIOD BAR ────────────────────────────
+function buildPeriodBar(selectPeriod) {
+  const bar = document.getElementById('period-bar');
+  bar.innerHTML = `<span class="period-label">Competências:</span>`;
+  if (!allBalancetes.length) {
+    bar.innerHTML += `<span style="color:var(--muted);font-size:0.85rem">Nenhum relatório disponível ainda.</span>`;
+    return;
+  }
+  allBalancetes.forEach((b, i) => {
+    const pill = document.createElement('div');
+    pill.className = 'period-pill' + ((!selectPeriod && i===0) || b.period===selectPeriod ? ' active' : '');
+    pill.textContent = b.period_label;
+    pill.onclick = () => { document.querySelectorAll('.period-pill').forEach(p=>p.classList.remove('active')); pill.classList.add('active'); renderDash(b); compareToPrev(b); };
+    bar.appendChild(pill);
+  });
+  const first = selectPeriod ? allBalancetes.find(b=>b.period===selectPeriod) || allBalancetes[0] : allBalancetes[0];
+  renderDash(first);
+  compareToPrev(first);
+}
+
+// ── RENDER DASHBOARD ─────────────────────
+function renderDash(b) {
+  const k = b.kpis || calcKPIs(b.data);
+  document.getElementById('dash-sub').textContent = `${b.period_label} · ${b.data?.length||0} contas · Atualizado em ${new Date(b.created_at).toLocaleDateString('pt-BR')}`;
+
+  // KPIs
+  const ativoTotal = k.ativoCirculante + k.ativoNaoCirculante;
+  const liq = k.passivoCirculante > 0 ? (k.ativoCirculante / k.passivoCirculante).toFixed(2) : '—';
+  const margem = k.receita > 0 ? ((k.resultado / k.receita)*100).toFixed(1) : '0.0';
+  const endiv = ativoTotal > 0 ? (((k.passivoCirculante+k.passivoNaoCirculante)/ativoTotal)*100).toFixed(1) : '0';
+
+  const kpiDefs = [
+    { tag:'Receita Total', val:fmt(k.receita), note:'Faturamento do período', cls:'blue' },
+    { tag:'Resultado Líquido', val:fmt(k.resultado), note:`Margem: ${margem}%`, cls: k.resultado>=0?'green':'red' },
+    { tag:'Ativo Total', val:fmt(ativoTotal), note:'Patrimônio da empresa', cls:'blue' },
+    { tag:'Liquidez Corrente', val:liq, note:'Meta: acima de 1,0', cls: parseFloat(liq)>=1?'green':'red' },
+    { tag:'Patrimônio Líquido', val:fmt(k.patrimonioLiquido), note:'Capital próprio', cls:'orange' },
+    { tag:'Endividamento', val:endiv+'%', note:'Passivo / Ativo total', cls: parseFloat(endiv)>70?'red':'green' },
+  ];
+  const grid = document.getElementById('kpi-grid');
+  grid.innerHTML = kpiDefs.map((kd,i)=>`
+    <div class="kpi ${kd.cls}" style="animation-delay:${i*0.06}s">
+      <div class="kpi-tag">${kd.tag}</div>
+      <div class="kpi-val">${kd.val}</div>
+      <div class="kpi-note">${kd.note}</div>
+    </div>`).join('');
+
+  // Destroy charts
+  Object.values(charts).forEach(c=>c.destroy()); charts={};
+
+  const gOpts = { responsive:true, plugins:{ legend:{ labels:{ color:'#6b7fa3', font:{family:'Cabinet Grotesk'} } } } };
+  const tickColor = { ticks:{color:'#6b7fa3'}, grid:{color:'rgba(31,45,66,0.8)'} };
+
+  // Bar chart
+  charts.bar = new Chart(document.getElementById('ch-resultado'),{
+    type:'bar',
+    data:{ labels:['Receita','Custos','Despesas','Resultado'],
+      datasets:[{ data:[k.receita,k.custos,k.despesas,k.resultado],
+        backgroundColor:['rgba(79,142,247,0.7)','rgba(251,191,36,0.7)','rgba(248,113,113,0.7)', k.resultado>=0?'rgba(52,211,153,0.7)':'rgba(248,113,113,0.7)'],
+        borderRadius:8, borderSkipped:false }]},
+    options:{ ...gOpts, plugins:{...gOpts.plugins,legend:{display:false}}, scales:{ x:{...tickColor}, y:{...tickColor, ticks:{...tickColor.ticks, callback:v=>'R$'+(v/1000).toFixed(0)+'k'}} } }
+  });
+
+  // Donut
+  charts.donut = new Chart(document.getElementById('ch-donut'),{
+    type:'doughnut',
+    data:{ labels:['Custos','Despesas','Resultado'], datasets:[{ data:[k.custos,k.despesas,Math.max(k.resultado,0)], backgroundColor:['rgba(251,191,36,0.8)','rgba(248,113,113,0.8)','rgba(52,211,153,0.8)'], borderWidth:0, hoverOffset:8 }]},
+    options:{ ...gOpts, cutout:'65%' }
+  });
+
+  // Ativo
+  charts.ativo = new Chart(document.getElementById('ch-ativo'),{
+    type:'doughnut',
+    data:{ labels:['Circulante','Não Circulante'], datasets:[{ data:[k.ativoCirculante,k.ativoNaoCirculante], backgroundColor:['rgba(79,142,247,0.8)','rgba(52,211,153,0.8)'], borderWidth:0 }]},
+    options:{ ...gOpts, cutout:'65%' }
+  });
+
+  // Passivo
+  charts.passivo = new Chart(document.getElementById('ch-passivo'),{
+    type:'doughnut',
+    data:{ labels:['PC','PNC','PL'], datasets:[{ data:[k.passivoCirculante,k.passivoNaoCirculante,k.patrimonioLiquido], backgroundColor:['rgba(248,113,113,0.8)','rgba(251,191,36,0.8)','rgba(79,142,247,0.8)'], borderWidth:0 }]},
+    options:{ ...gOpts, cutout:'65%' }
+  });
+
+  // Radar
+  const margemN = Math.max(parseFloat(margem),0);
+  const liqN = Math.min(parseFloat(liq)*50||0,100);
+  const endivN = Math.max(100-parseFloat(endiv),0);
+  charts.radar = new Chart(document.getElementById('ch-radar'),{
+    type:'radar',
+    data:{ labels:['Margem','Liquidez','Autonomia','Faturamento','Estrutura'],
+      datasets:[
+        { label:'Empresa', data:[margemN,liqN,endivN,k.receita>0?75:0,k.ativoCirculante>0?70:30], backgroundColor:'rgba(52,211,153,0.12)', borderColor:'rgba(52,211,153,0.8)', pointBackgroundColor:'#34d399', borderWidth:2 },
+        { label:'Referência', data:[15,70,50,60,60], backgroundColor:'rgba(79,142,247,0.06)', borderColor:'rgba(79,142,247,0.3)', pointBackgroundColor:'#4f8ef7', borderWidth:1.5, borderDash:[5,5] }
+      ]},
+    options:{ ...gOpts, scales:{ r:{ ticks:{color:'#6b7fa3',backdropColor:'transparent'}, grid:{color:'rgba(31,45,66,0.8)'}, pointLabels:{color:'#6b7fa3',font:{family:'Cabinet Grotesk',size:10}}, min:0,max:100 } } }
+  });
+}
+
+// ── COMPARE ───────────────────────────────
+function compareToPrev(current) {
+  const idx = allBalancetes.findIndex(b=>b.period===current.period);
+  const box = document.getElementById('compare-box');
+  if (idx < 0 || idx === allBalancetes.length-1) { box.className='compare-box'; return; }
+  const prev = allBalancetes[idx+1];
+  const kc = current.kpis || calcKPIs(current.data);
+  const kp = prev.kpis || calcKPIs(prev.data);
+  const delta = (a,b) => { const d=a-b; const pct=b?((d/Math.abs(b))*100).toFixed(1):0; return { d, pct, up:d>=0 }; };
+  const dRec = delta(kc.receita, kp.receita);
+  const dRes = delta(kc.resultado, kp.resultado);
+  const dLiq = delta(kc.ativoCirculante/Math.max(kc.passivoCirculante,1), kp.ativoCirculante/Math.max(kp.passivoCirculante,1));
+  box.className='compare-box show';
+  box.innerHTML = `
+    <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--muted);flex-basis:100%">Comparativo com ${prev.period_label}</div>
+    ${cmpItem('Receita', fmt(kc.receita), dRec)}
+    <div class="compare-divider"></div>
+    ${cmpItem('Resultado', fmt(kc.resultado), dRes)}
+    <div class="compare-divider"></div>
+    ${cmpItem('Liquidez', (kc.ativoCirculante/Math.max(kc.passivoCirculante,1)).toFixed(2), dLiq)}
+  `;
+}
+function cmpItem(label, val, d) {
+  return `<div class="compare-item"><div class="compare-label">${label}</div><div class="compare-val">${val}</div><div class="compare-delta ${d.up?'delta-up':'delta-down'}">${d.up?'▲':'▼'} ${Math.abs(d.pct)}%</div></div>`;
+}
+
+// ── TREND CHART ───────────────────────────
+function buildTrendChart() {
+  if (allBalancetes.length < 2) return;
+  document.getElementById('trend-box').style.display = 'block';
+  const sorted = [...allBalancetes].reverse();
+  const labels = sorted.map(b=>b.period_label);
+  const receitas = sorted.map(b=>(b.kpis||calcKPIs(b.data)).receita);
+  const resultados = sorted.map(b=>(b.kpis||calcKPIs(b.data)).resultado);
+  if (charts.trend) charts.trend.destroy();
+  charts.trend = new Chart(document.getElementById('ch-trend'),{
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'Receita', data:receitas, borderColor:'rgba(79,142,247,0.8)', backgroundColor:'rgba(79,142,247,0.08)', tension:0.4, fill:true, pointBackgroundColor:'#4f8ef7' },
+      { label:'Resultado', data:resultados, borderColor:'rgba(52,211,153,0.8)', backgroundColor:'rgba(52,211,153,0.06)', tension:0.4, fill:true, pointBackgroundColor:'#34d399' }
+    ]},
+    options:{ responsive:true, plugins:{ legend:{ labels:{ color:'#6b7fa3', font:{family:'Cabinet Grotesk'} } } }, scales:{ x:{ticks:{color:'#6b7fa3'},grid:{color:'rgba(31,45,66,0.8)'}}, y:{ticks:{color:'#6b7fa3',callback:v=>'R$'+(v/1000).toFixed(0)+'k'},grid:{color:'rgba(31,45,66,0.8)'}} } }
+  });
+}
+
+// ── HELPERS ───────────────────────────────
+function calcKPIs(accounts) {
+  let rec=0,cst=0,desp=0,ac=0,anc=0,pc=0,pnc=0,pl=0;
+  for (const a of (accounts||[])) {
+    const c=a.code.replace(/\D/g,''); const d=a.desc.toLowerCase(); const s=Math.abs(a.saldo);
+    if (c.startsWith('1')||d.includes('ativo')) { if (d.includes('nao circ')||d.includes('imobil')) anc+=s; else ac+=s; }
+    else if (c.startsWith('2')||d.includes('passivo')||d.includes('fornec')) { if (d.includes('patrimonio')||d.includes('capital')) pl+=s; else if (d.includes('nao circ')) pnc+=s; else pc+=s; }
+    else if (c.startsWith('3')||d.includes('receita')) rec+=s;
+    else if (c.startsWith('4')||d.includes('custo')) cst+=s;
+    else if (c.startsWith('5')||d.includes('despesa')) desp+=s;
+  }
+  return { receita:rec, custos:cst, despesas:desp, resultado:rec-cst-desp, ativoCirculante:ac, ativoNaoCirculante:anc, passivoCirculante:pc, passivoNaoCirculante:pnc, patrimonioLiquido:pl };
+}
+function fmt(v) { return 'R$ '+Math.abs(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+</script>
+</body>
+</html>

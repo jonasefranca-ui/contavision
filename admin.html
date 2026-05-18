@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContaVision — Painel do Contador</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f1eb;
+  --surface: #ffffff;
+  --surface2: #f9f7f3;
+  --border: #e2ddd5;
+  --ink: #1a1714;
+  --ink2: #5a5450;
+  --accent: #2c5f2e;
+  --accent-light: #e8f0e8;
+  --accent2: #c8872a;
+  --danger: #c0392b;
+  --shadow: 0 2px 16px rgba(26,23,20,0.08);
+  --shadow-lg: 0 8px 40px rgba(26,23,20,0.12);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Sora', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
+
+/* ── CONFIG BANNER ── */
+#config-banner {
+  background: #fff3cd; border-bottom: 2px solid #ffc107;
+  padding: 1rem 2rem; font-size: 0.88rem; color: #856404;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+#config-banner code { background: rgba(0,0,0,0.08); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85rem; }
+
+/* ── AUTH ── */
+#auth-screen {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+  background-image: repeating-linear-gradient(0deg, transparent, transparent 39px, var(--border) 39px, var(--border) 40px),
+                    repeating-linear-gradient(90deg, transparent, transparent 39px, var(--border) 39px, var(--border) 40px);
+}
+.auth-card {
+  background: var(--surface); border-radius: 20px; padding: 3rem;
+  width: 100%; max-width: 440px; box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+}
+.auth-logo { font-family: 'Playfair Display', serif; font-size: 2rem; color: var(--accent); margin-bottom: 0.3rem; }
+.auth-sub { color: var(--ink2); font-size: 0.85rem; margin-bottom: 2rem; font-weight: 300; }
+.auth-card h2 { font-size: 1.3rem; font-weight: 600; margin-bottom: 1.5rem; }
+
+.field { margin-bottom: 1.2rem; }
+.field label { display: block; font-size: 0.78rem; font-weight: 600; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 0.4rem; }
+.field input {
+  width: 100%; padding: 0.8rem 1rem;
+  border: 1.5px solid var(--border); border-radius: 10px;
+  font-family: 'Sora', sans-serif; font-size: 0.92rem; color: var(--ink);
+  background: var(--surface2); outline: none; transition: border-color 0.2s;
+}
+.field input:focus { border-color: var(--accent); background: #fff; }
+
+.btn { width: 100%; padding: 0.9rem; border: none; border-radius: 10px; font-family: 'Sora', sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #234d25; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(44,95,46,0.3); }
+.btn-secondary { background: var(--surface2); color: var(--ink2); border: 1.5px solid var(--border); margin-top: 0.75rem; }
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-sm { width: auto; padding: 0.45rem 1rem; font-size: 0.82rem; border-radius: 8px; }
+
+.msg { padding: 0.7rem 1rem; border-radius: 8px; font-size: 0.85rem; margin-top: 1rem; display: none; }
+.msg-error { background: #fdecea; color: var(--danger); border: 1px solid #f5c6c6; }
+.msg-success { background: var(--accent-light); color: var(--accent); border: 1px solid #c3d9c4; }
+
+/* ── APP LAYOUT ── */
+#app { display: none; min-height: 100vh; }
+
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 260px;
+  background: var(--ink); color: #fff; padding: 0;
+  display: flex; flex-direction: column; z-index: 50;
+}
+.sidebar-logo {
+  padding: 1.8rem 1.5rem 1.5rem;
+  font-family: 'Playfair Display', serif; font-size: 1.6rem; color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.sidebar-logo span { color: #6db56f; }
+.sidebar-nav { flex: 1; padding: 1rem 0; }
+.nav-item {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.8rem 1.5rem; font-size: 0.9rem; font-weight: 500;
+  color: rgba(255,255,255,0.6); cursor: pointer; transition: all 0.15s;
+  border-left: 3px solid transparent;
+}
+.nav-item:hover { color: #fff; background: rgba(255,255,255,0.05); }
+.nav-item.active { color: #fff; background: rgba(109,181,111,0.15); border-left-color: #6db56f; }
+.nav-icon { font-size: 1.1rem; width: 20px; text-align: center; }
+.sidebar-footer { padding: 1.2rem 1.5rem; border-top: 1px solid rgba(255,255,255,0.08); }
+.user-info { font-size: 0.82rem; color: rgba(255,255,255,0.5); margin-bottom: 0.75rem; }
+.user-info strong { color: rgba(255,255,255,0.85); display: block; font-size: 0.9rem; }
+.btn-logout { background: transparent; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.5); width: 100%; padding: 0.5rem; border-radius: 8px; font-family: 'Sora', sans-serif; font-size: 0.82rem; cursor: pointer; transition: all 0.2s; }
+.btn-logout:hover { border-color: #f08080; color: #f08080; }
+
+.main { margin-left: 260px; min-height: 100vh; }
+.topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1.2rem 2rem; display: flex; align-items: center; justify-content: space-between; }
+.topbar h1 { font-size: 1.2rem; font-weight: 600; }
+.topbar-sub { font-size: 0.82rem; color: var(--ink2); }
+
+.content { padding: 2rem; }
+
+/* ── PANELS ── */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── STATS ROW ── */
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 1.4rem;
+  display: flex; align-items: center; gap: 1rem;
+}
+.stat-icon { font-size: 2rem; }
+.stat-label { font-size: 0.75rem; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.07em; }
+.stat-value { font-family: 'Playfair Display', serif; font-size: 1.8rem; color: var(--accent); line-height: 1; }
+
+/* ── CARDS ── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.2rem; }
+.card-title { font-size: 1rem; font-weight: 600; }
+.card-sub { font-size: 0.8rem; color: var(--ink2); margin-top: 0.15rem; }
+
+/* ── TABLE ── */
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th { text-align: left; padding: 0.6rem 1rem; font-size: 0.74rem; color: var(--ink2); text-transform: uppercase; letter-spacing: 0.07em; border-bottom: 1.5px solid var(--border); font-weight: 600; }
+td { padding: 0.85rem 1rem; border-bottom: 1px solid var(--border); color: var(--ink); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2); }
+
+/* ── UPLOAD AREA ── */
+.drop-zone {
+  border: 2px dashed var(--border); border-radius: 12px; padding: 2.5rem;
+  text-align: center; cursor: pointer; transition: all 0.2s; position: relative; background: var(--surface2);
+}
+.drop-zone:hover, .drop-zone.dragging { border-color: var(--accent); background: var(--accent-light); }
+.drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.drop-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+.drop-text { color: var(--ink2); font-size: 0.9rem; }
+.drop-text strong { color: var(--accent); }
+.file-badge { display: inline-block; background: var(--accent-light); color: var(--accent); border: 1px solid #c3d9c4; border-radius: 20px; padding: 0.3rem 0.8rem; font-size: 0.82rem; margin-top: 0.75rem; }
+
+/* ── BADGES ── */
+.badge { display: inline-block; padding: 0.25rem 0.65rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+.badge-green { background: var(--accent-light); color: var(--accent); }
+.badge-orange { background: #fef3e2; color: var(--accent2); }
+.badge-red { background: #fdecea; color: var(--danger); }
+.badge-gray { background: #f0ede8; color: var(--ink2); }
+
+/* ── MODAL ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(26,23,20,0.5); z-index: 200; display: none; align-items: center; justify-content: center; padding: 1rem; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--surface); border-radius: 20px; padding: 2rem; width: 100%; max-width: 480px; box-shadow: var(--shadow-lg); }
+.modal h3 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1.5rem; }
+.modal-footer { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+
+/* ── HISTORY LIST ── */
+.history-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 0.75rem;
+  background: var(--surface2); transition: all 0.15s;
+}
+.history-item:hover { border-color: var(--accent); background: var(--accent-light); }
+.history-period { font-weight: 600; font-size: 0.95rem; }
+.history-meta { font-size: 0.78rem; color: var(--ink2); margin-top: 0.2rem; }
+.history-actions { display: flex; gap: 0.5rem; }
+
+.select-field select {
+  width: 100%; padding: 0.8rem 1rem; border: 1.5px solid var(--border); border-radius: 10px;
+  font-family: 'Sora', sans-serif; font-size: 0.92rem; color: var(--ink); background: var(--surface2);
+  outline: none; cursor: pointer;
+}
+.select-field select:focus { border-color: var(--accent); }
+
+.empty-state { text-align: center; padding: 3rem; color: var(--ink2); }
+.empty-state .empty-icon { font-size: 3rem; margin-bottom: 1rem; }
+.empty-state p { font-size: 0.9rem; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.panel.active { animation: fadeIn 0.3s ease; }
+</style>
+</head>
+<body>
+
+<!-- CONFIG BANNER -->
+<div id="config-banner">
+  ⚠️ Configure suas credenciais Supabase: abra este arquivo e substitua <code>SEU_SUPABASE_URL</code> e <code>SEU_SUPABASE_ANON_KEY</code> pelos valores do seu projeto.
+</div>
+
+<!-- ═══ AUTH ═══ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">Conta<span style="color:#c8872a">Vision</span></div>
+    <div class="auth-sub">Painel do Contador</div>
+    <h2 id="auth-title">Entrar na conta</h2>
+    <div class="field"><label>E-mail</label><input type="email" id="auth-email" placeholder="seu@email.com"></div>
+    <div class="field"><label>Senha</label><input type="password" id="auth-pass" placeholder="••••••••"></div>
+    <div class="msg msg-error" id="auth-error"></div>
+    <div class="msg msg-success" id="auth-success"></div>
+    <button class="btn btn-primary" onclick="signIn()">Entrar →</button>
+    <button class="btn btn-secondary" onclick="showRegister()">Criar conta de contador</button>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="app">
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">Conta<span>Vision</span></div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showPanel('overview')"><span class="nav-icon">📊</span> Visão Geral</div>
+      <div class="nav-item" onclick="showPanel('clients')"><span class="nav-icon">👥</span> Clientes</div>
+      <div class="nav-item" onclick="showPanel('upload')"><span class="nav-icon">📤</span> Enviar Balancete</div>
+      <div class="nav-item" onclick="showPanel('history')"><span class="nav-icon">🗂️</span> Histórico</div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="user-info"><strong id="sidebar-name">—</strong><span id="sidebar-email">—</span></div>
+      <button class="btn-logout" onclick="signOut()">Sair</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="topbar-title">Visão Geral</h1>
+        <div class="topbar-sub" id="topbar-sub">Bem-vindo ao ContaVision</div>
+      </div>
+    </div>
+    <div class="content">
+
+      <!-- OVERVIEW -->
+      <div class="panel active" id="panel-overview">
+        <div class="stats-row" id="stats-row">
+          <div class="stat-card"><div class="stat-icon">👥</div><div><div class="stat-label">Clientes</div><div class="stat-value" id="stat-clients">—</div></div></div>
+          <div class="stat-card"><div class="stat-icon">📁</div><div><div class="stat-label">Balancetes</div><div class="stat-value" id="stat-bal">—</div></div></div>
+          <div class="stat-card"><div class="stat-icon">📅</div><div><div class="stat-label">Último envio</div><div class="stat-value" id="stat-last" style="font-size:1rem;padding-top:0.3rem">—</div></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Últimos balancetes enviados</div><div class="card-sub">Atividade recente da carteira</div></div></div>
+          <table><thead><tr><th>Cliente</th><th>Competência</th><th>Enviado em</th><th>Ações</th></tr></thead>
+          <tbody id="recent-table"><tr><td colspan="4" style="text-align:center;color:#999;padding:2rem">Carregando...</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- CLIENTS -->
+      <div class="panel" id="panel-clients">
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Carteira de Clientes</div><div class="card-sub">Gerencie os acessos dos seus clientes</div></div>
+            <button class="btn btn-primary btn-sm" onclick="openModal('modal-add-client')">+ Novo Cliente</button>
+          </div>
+          <table><thead><tr><th>Empresa</th><th>CNPJ</th><th>E-mail</th><th>Balancetes</th><th>Ações</th></tr></thead>
+          <tbody id="clients-table"><tr><td colspan="5" style="text-align:center;color:#999;padding:2rem">Carregando...</td></tr></tbody></table>
+        </div>
+      </div>
+
+      <!-- UPLOAD -->
+      <div class="panel" id="panel-upload">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Enviar Balancete</div><div class="card-sub">Importe o balancete exportado do Domínio</div></div></div>
+
+          <div class="field select-field">
+            <label>Cliente</label>
+            <select id="upload-client"><option value="">— Selecione o cliente —</option></select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div class="field"><label>Competência</label><input type="month" id="upload-period" style="width:100%;padding:0.8rem 1rem;border:1.5px solid var(--border);border-radius:10px;font-family:Sora,sans-serif;font-size:0.92rem;outline:none"></div>
+            <div class="field"><label>Rótulo (ex: Março/2025)</label><input type="text" id="upload-label" placeholder="Março/2025" style="width:100%;padding:0.8rem 1rem;border:1.5px solid var(--border);border-radius:10px;font-family:Sora,sans-serif;font-size:0.92rem;outline:none"></div>
+          </div>
+
+          <div class="drop-zone" id="up-drop">
+            <input type="file" id="up-file" accept=".txt,.csv,.xlsx,.xls">
+            <div class="drop-icon">📂</div>
+            <div class="drop-text"><strong>Clique ou arraste o balancete</strong><br><span style="font-size:0.82rem">TXT, CSV, XLSX ou XLS exportado do Domínio</span></div>
+            <div id="up-file-badge"></div>
+          </div>
+
+          <div class="msg msg-error" id="up-error"></div>
+          <div class="msg msg-success" id="up-success"></div>
+          <button class="btn btn-primary" style="margin-top:1.5rem;max-width:280px" onclick="uploadBalancete()">Processar e Salvar →</button>
+        </div>
+      </div>
+
+      <!-- HISTORY -->
+      <div class="panel" id="panel-history">
+        <div class="card">
+          <div class="card-header">
+            <div><div class="card-title">Histórico de Balancetes</div><div class="card-sub">Todos os períodos importados</div></div>
+            <div class="select-field" style="width:220px">
+              <select id="hist-filter" onchange="loadHistory()"><option value="">Todos os clientes</option></select>
+            </div>
+          </div>
+          <div id="history-list"><div style="text-align:center;color:#999;padding:3rem">Carregando...</div></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal-add-client">
+  <div class="modal">
+    <h3>Cadastrar Novo Cliente</h3>
+    <p style="font-size:0.85rem;color:var(--ink2);margin-bottom:1.5rem">Um e-mail com acesso será enviado ao cliente. Ele poderá ver os dashboards dele.</p>
+    <div class="field"><label>Nome da Empresa</label><input type="text" id="nc-company" placeholder="Padaria do João Ltda"></div>
+    <div class="field"><label>Nome do Responsável</label><input type="text" id="nc-name" placeholder="João da Silva"></div>
+    <div class="field"><label>CNPJ</label><input type="text" id="nc-cnpj" placeholder="00.000.000/0001-00"></div>
+    <div class="field"><label>E-mail do Cliente</label><input type="email" id="nc-email" placeholder="joao@empresa.com"></div>
+    <div class="field"><label>Senha Inicial</label><input type="text" id="nc-pass" placeholder="Mínimo 8 caracteres"></div>
+    <div class="msg msg-error" id="nc-error"></div>
+    <div class="msg msg-success" id="nc-success"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-client')">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="createClient()">Cadastrar Cliente</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-register">
+  <div class="modal">
+    <h3>Criar Conta de Contador</h3>
+    <div class="field"><label>Seu Nome</label><input type="text" id="reg-name" placeholder="Maria Contadora"></div>
+    <div class="field"><label>E-mail</label><input type="email" id="reg-email"></div>
+    <div class="field"><label>Senha</label><input type="password" id="reg-pass" placeholder="Mínimo 8 caracteres"></div>
+    <div class="msg msg-error" id="reg-error"></div>
+    <div class="msg msg-success" id="reg-success"></div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-register')">Cancelar</button>
+      <button class="btn btn-primary btn-sm" onclick="registerAdmin()">Criar Conta</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// ⚠️  CONFIGURE AQUI — substitua pelos seus valores
+// ══════════════════════════════════════════════════════
+const SUPABASE_URL  = 'https://ebgmrbklckecjgdqxkpx.supabase.co';
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImViZ21yYmtsY2tlY2pnZHF4a3B4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDc3MzIsImV4cCI6MjA5NDYyMzczMn0.FKHTCBNMfl3qtllT0gHXjByGtbyPJ738P4jkXIB5wa4';
+// ══════════════════════════════════════════════════════
+
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let currentProfile = null;
+let clientsList = [];
+let uploadFile = null;
+
+// Oculta banner se configurado
+if (!SUPABASE_URL.includes('SEU_')) document.getElementById('config-banner').style.display = 'none';
+
+// ── AUTH ──────────────────────────────────────────────
+async function signIn() {
+  const email = document.getElementById('auth-email').value.trim();
+  const pass  = document.getElementById('auth-pass').value;
+  showMsg('auth-error', ''); showMsg('auth-success', '');
+  const { data, error } = await db.auth.signInWithPassword({ email, password: pass });
+  if (error) { showMsg('auth-error', error.message); return; }
+  await loadApp(data.user);
+}
+
+async function registerAdmin() {
+  const name  = document.getElementById('reg-name').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pass  = document.getElementById('reg-pass').value;
+  showMsg('reg-error', '');
+  const { data, error } = await db.auth.signUp({
+    email, password: pass,
+    options: { data: { name, role: 'admin' } }
+  });
+  if (error) { showMsg('reg-error', error.message); return; }
+  showMsg('reg-success', 'Conta criada! Verifique seu e-mail para confirmar.');
+}
+
+async function signOut() {
+  await db.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+}
+
+async function loadApp(user) {
+  currentUser = user;
+  const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
+  currentProfile = profile;
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('sidebar-name').textContent = profile?.name || user.email;
+  document.getElementById('sidebar-email').textContent = user.email;
+  document.getElementById('topbar-sub').textContent = new Date().toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
+  await loadClients();
+  await loadOverview();
+}
+
+db.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) loadApp(session.user);
+});
+
+// ── CLIENTS ───────────────────────────────────────────
+async function loadClients() {
+  const { data: links } = await db.from('client_accounts').select('client_id').eq('admin_id', currentUser.id);
+  if (!links || links.length === 0) { clientsList = []; renderClientsTable(); return; }
+  const ids = links.map(l => l.client_id);
+  const { data: profiles } = await db.from('profiles').select('*').in('id', ids);
+  clientsList = profiles || [];
+  renderClientsTable();
+  populateClientSelects();
+}
+
+function renderClientsTable() {
+  const tb = document.getElementById('clients-table');
+  if (!clientsList.length) { tb.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">👥</div><p>Nenhum cliente cadastrado ainda.</p></div></td></tr>`; return; }
+  tb.innerHTML = clientsList.map(c => `
+    <tr>
+      <td><strong>${c.company || '—'}</strong></td>
+      <td style="color:var(--ink2)">${c.cnpj || '—'}</td>
+      <td style="color:var(--ink2)">${c.id}</td>
+      <td><span class="badge badge-green">Ativo</span></td>
+      <td><button class="btn btn-secondary btn-sm" onclick="viewClientHistory('${c.id}','${c.company}')">Ver histórico</button></td>
+    </tr>`).join('');
+}
+
+function populateClientSelects() {
+  const opts = clientsList.map(c => `<option value="${c.id}">${c.company || c.name}</option>`).join('');
+  document.getElementById('upload-client').innerHTML = '<option value="">— Selecione o cliente —</option>' + opts;
+  document.getElementById('hist-filter').innerHTML = '<option value="">Todos os clientes</option>' + opts;
+}
+
+async function createClient() {
+  const company = document.getElementById('nc-company').value.trim();
+  const name    = document.getElementById('nc-name').value.trim();
+  const cnpj    = document.getElementById('nc-cnpj').value.trim();
+  const email   = document.getElementById('nc-email').value.trim();
+  const pass    = document.getElementById('nc-pass').value;
+  showMsg('nc-error', '');
+  if (!company || !email || !pass) { showMsg('nc-error', 'Preencha todos os campos obrigatórios.'); return; }
+
+  // Usa a Admin API via service role — aqui usamos signUp para simplificar
+  const { data, error } = await db.auth.signUp({
+    email, password: pass,
+    options: { data: { name: name || company, role: 'client', company, cnpj } }
+  });
+  if (error) { showMsg('nc-error', error.message); return; }
+
+  // Aguarda o trigger criar o profile, depois vincula
+  await new Promise(r => setTimeout(r, 1500));
+  await db.from('client_accounts').insert({ admin_id: currentUser.id, client_id: data.user.id });
+
+  showMsg('nc-success', `Cliente "${company}" cadastrado com sucesso!`);
+  setTimeout(() => { closeModal('modal-add-client'); loadClients(); }, 1500);
+}
+
+// ── UPLOAD ────────────────────────────────────────────
+const upDrop = document.getElementById('up-drop');
+const upFile = document.getElementById('up-file');
+upDrop.addEventListener('dragover', e => { e.preventDefault(); upDrop.classList.add('dragging'); });
+upDrop.addEventListener('dragleave', () => upDrop.classList.remove('dragging'));
+upDrop.addEventListener('drop', e => { e.preventDefault(); upDrop.classList.remove('dragging'); if (e.dataTransfer.files[0]) setUploadFile(e.dataTransfer.files[0]); });
+upFile.addEventListener('change', e => { if (e.target.files[0]) setUploadFile(e.target.files[0]); });
+
+function setUploadFile(file) {
+  uploadFile = file;
+  document.getElementById('up-file-badge').innerHTML = `<div class="file-badge">✓ ${file.name}</div>`;
+}
+
+async function uploadBalancete() {
+  const clientId = document.getElementById('upload-client').value;
+  const period   = document.getElementById('upload-period').value;
+  const label    = document.getElementById('upload-label').value.trim() || period;
+  showMsg('up-error', ''); showMsg('up-success', '');
+
+  if (!clientId || !period || !uploadFile) { showMsg('up-error', 'Selecione o cliente, competência e o arquivo.'); return; }
+
+  let accounts = [];
+  const ext = uploadFile.name.split('.').pop().toLowerCase();
+  if (ext === 'txt' || ext === 'csv') {
+    const text = await uploadFile.text();
+    accounts = parseTXT(text);
+  } else {
+    accounts = await parseExcel(uploadFile);
+  }
+
+  if (!accounts.length) { showMsg('up-error', 'Não foi possível ler contas do arquivo. Verifique o formato.'); return; }
+
+  const kpis = calcKPIs(accounts);
+
+  const { error } = await db.from('balancetes').upsert({
+    client_id: clientId,
+    uploaded_by: currentUser.id,
+    period,
+    period_label: label,
+    filename: uploadFile.name,
+    data: accounts,
+    kpis
+  }, { onConflict: 'client_id,period' });
+
+  if (error) { showMsg('up-error', 'Erro ao salvar: ' + error.message); return; }
+  showMsg('up-success', `Balancete de ${label} salvo com sucesso!`);
+  uploadFile = null;
+  document.getElementById('up-file-badge').innerHTML = '';
+  loadOverview();
+}
+
+// ── OVERVIEW ──────────────────────────────────────────
+async function loadOverview() {
+  const { data: balancetes } = await db.from('balancetes').select('*, profiles!client_id(company,name)').eq('uploaded_by', currentUser.id).order('created_at', { ascending: false }).limit(10);
+  document.getElementById('stat-clients').textContent = clientsList.length;
+  document.getElementById('stat-bal').textContent = balancetes?.length || 0;
+  if (balancetes?.[0]) {
+    const d = new Date(balancetes[0].created_at);
+    document.getElementById('stat-last').textContent = d.toLocaleDateString('pt-BR');
+  }
+  const tb = document.getElementById('recent-table');
+  if (!balancetes?.length) { tb.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#999;padding:2rem">Nenhum balancete enviado ainda.</td></tr>`; return; }
+  tb.innerHTML = balancetes.map(b => `
+    <tr>
+      <td><strong>${b.profiles?.company || b.profiles?.name || '—'}</strong></td>
+      <td><span class="badge badge-orange">${b.period_label}</span></td>
+      <td style="color:var(--ink2)">${new Date(b.created_at).toLocaleDateString('pt-BR')}</td>
+      <td><a href="client.html?id=${b.client_id}&period=${b.period}" target="_blank" style="color:var(--accent);font-size:0.82rem;font-weight:600">Ver dashboard →</a></td>
+    </tr>`).join('');
+}
+
+// ── HISTORY ───────────────────────────────────────────
+async function loadHistory() {
+  const filter = document.getElementById('hist-filter').value;
+  let query = db.from('balancetes').select('*, profiles!client_id(company,name)').eq('uploaded_by', currentUser.id).order('period', { ascending: false });
+  if (filter) query = query.eq('client_id', filter);
+  const { data } = await query;
+  const list = document.getElementById('history-list');
+  if (!data?.length) { list.innerHTML = `<div class="empty-state"><div class="empty-icon">🗂️</div><p>Nenhum balancete encontrado.</p></div>`; return; }
+  list.innerHTML = data.map(b => `
+    <div class="history-item">
+      <div>
+        <div class="history-period">${b.profiles?.company || '—'} · ${b.period_label}</div>
+        <div class="history-meta">Enviado em ${new Date(b.created_at).toLocaleDateString('pt-BR')} · ${b.filename || 'arquivo'}</div>
+      </div>
+      <div class="history-actions">
+        <a href="client.html?id=${b.client_id}&period=${b.period}" target="_blank">
+          <button class="btn btn-secondary btn-sm">📊 Ver</button>
+        </a>
+        <button class="btn btn-danger btn-sm" onclick="deleteBalancete('${b.id}')">🗑️</button>
+      </div>
+    </div>`).join('');
+}
+
+async function deleteBalancete(id) {
+  if (!confirm('Remover este balancete?')) return;
+  await db.from('balancetes').delete().eq('id', id);
+  loadHistory(); loadOverview();
+}
+
+function viewClientHistory(id, company) {
+  document.getElementById('hist-filter').value = id;
+  showPanel('history');
+  loadHistory();
+}
+
+// ── PARSE ─────────────────────────────────────────────
+function parseTXT(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  return lines.map(line => {
+    const p = line.split(/[;\t|,]/);
+    if (p.length < 3) return null;
+    const raw = p[p.length-1].replace(/[^\d.,-]/g,'').replace(',','.');
+    const saldo = parseFloat(raw) || 0;
+    return p[0] && p[1] ? { code: p[0].trim(), desc: p[1].trim(), saldo } : null;
+  }).filter(Boolean);
+}
+
+async function parseExcel(file) {
+  return new Promise(res => {
+    const r = new FileReader();
+    r.onload = e => {
+      const wb = XLSX.read(e.target.result, { type:'binary' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1 });
+      const accounts = rows.map(row => {
+        if (!row || row.length < 3) return null;
+        const raw = String(row[row.length-1]||'').replace(/[^\d.,-]/g,'').replace(',','.');
+        const saldo = parseFloat(raw)||0;
+        return row[0]&&row[1] ? { code:String(row[0]).trim(), desc:String(row[1]).trim(), saldo } : null;
+      }).filter(Boolean);
+      res(accounts);
+    };
+    r.readAsBinaryString(file);
+  });
+}
+
+function calcKPIs(accounts) {
+  let rec=0, cst=0, desp=0, ac=0, anc=0, pc=0, pnc=0, pl=0;
+  for (const a of accounts) {
+    const c = a.code.replace(/\D/g,''); const d = a.desc.toLowerCase(); const s = Math.abs(a.saldo);
+    if (c.startsWith('1')||d.includes('ativo')) { if (d.includes('nao circ')||d.includes('imobil')) anc+=s; else ac+=s; }
+    else if (c.startsWith('2')||d.includes('passivo')||d.includes('fornec')) { if (d.includes('patrimonio')||d.includes('capital')) pl+=s; else if (d.includes('nao circ')) pnc+=s; else pc+=s; }
+    else if (c.startsWith('3')||d.includes('receita')) rec+=s;
+    else if (c.startsWith('4')||d.includes('custo')) cst+=s;
+    else if (c.startsWith('5')||d.includes('despesa')) desp+=s;
+  }
+  return { receita:rec, custos:cst, despesas:desp, resultado:rec-cst-desp, ativoCirculante:ac, ativoNaoCirculante:anc, passivoCirculante:pc, passivoNaoCirculante:pnc, patrimonioLiquido:pl };
+}
+
+// ── UI HELPERS ────────────────────────────────────────
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  const titles = { overview:'Visão Geral', clients:'Clientes', upload:'Enviar Balancete', history:'Histórico' };
+  document.getElementById('topbar-title').textContent = titles[name] || name;
+  event?.currentTarget?.classList.add('active');
+  if (name === 'history') loadHistory();
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function showRegister() { openModal('modal-register'); }
+function showMsg(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+</script>
+</body>
+</html>
