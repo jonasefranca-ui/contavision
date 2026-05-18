@@ -297,7 +297,17 @@ async function initApp(user) {
     const clientId = params.get('id') || user.id;
     console.log('Buscando balancetes para:', clientId);
 
-    const { data: bals, error: balErr } = await db.from('balancetes').select('*').eq('client_id', clientId).order('period', { ascending: false });
+    let bals = null, balErr = null;
+    try {
+      const result = await Promise.race([
+        db.from('balancetes').select('id,client_id,period,period_label,kpis,data,created_at').eq('client_id', clientId).order('period', { ascending: false }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))
+      ]);
+      bals = result.data;
+      balErr = result.error;
+    } catch(e) {
+      console.error('Erro ou timeout ao buscar balancetes:', e.message);
+    }
     console.log('Balancetes:', bals?.length, balErr?.message);
 
     allBalancetes = bals || [];
