@@ -725,33 +725,30 @@ async function parseExcel(file) {
 // Usa o Claude para extrair as contas com precisão
 async function parsePDF(file) {
   showMsg('up-error', '');
-  document.getElementById('loading').style.display = 'block';
-  document.getElementById('loading').textContent = '🤖 Lendo PDF com IA... pode levar alguns segundos.';
-
+  showMsg('up-success', '🤖 Lendo PDF com IA... aguarde alguns segundos.');
   try {
     const base64 = await fileToBase64(file);
     const accounts = await extrairContasComIA(base64, 'application/pdf', true);
     return accounts;
-  } finally {
-    document.getElementById('loading').style.display = 'none';
+  } catch(e) {
+    showMsg('up-error', 'Erro ao processar PDF: ' + e.message);
+    return [];
   }
 }
 
 async function parseTXTComIA(file) {
   const text = await file.text();
-  // Tenta parser direto primeiro
   const direct = parseTXT(text);
   if (direct.length > 5) return direct;
 
-  // Se falhar, usa IA
-  document.getElementById('loading').style.display = 'block';
-  document.getElementById('loading').textContent = '🤖 Processando TXT com IA...';
+  showMsg('up-success', '🤖 Processando com IA...');
   try {
     const base64 = btoa(unescape(encodeURIComponent(text.substring(0, 50000))));
     const accounts = await extrairContasComIA(base64, 'text/plain', false);
     return accounts;
-  } finally {
-    document.getElementById('loading').style.display = 'none';
+  } catch(e) {
+    showMsg('up-error', 'Erro ao processar TXT: ' + e.message);
+    return [];
   }
 }
 
