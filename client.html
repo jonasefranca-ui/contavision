@@ -226,8 +226,8 @@ const SUPABASE_URL = 'https://ebgmrbklckecjgdqxkpx.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImViZ21yYmtsY2tlY2pnZHF4a3B4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDc3MzIsImV4cCI6MjA5NDYyMzczMn0.FKHTCBNMfl3qtllT0gHXjByGtbyPJ738P4jkXIB5wa4';
 // ══════════════════════════════════════════
 
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+const { createClient: supabaseCreateClient } = supabase;
+const db = supabaseCreateClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 let allBalancetes = [];
@@ -418,16 +418,18 @@ function buildTrendChart() {
 
 // ── HELPERS ───────────────────────────────
 function calcKPIs(accounts) {
-  let rec=0,cst=0,desp=0,ac=0,anc=0,pc=0,pnc=0,pl=0;
+  let ac=0,anc=0,pc=0,pnc=0,pl=0,rec=0,desp=0;
   for (const a of (accounts||[])) {
-    const c=a.code.replace(/\D/g,''); const d=a.desc.toLowerCase(); const s=Math.abs(a.saldo);
-    if (c.startsWith('1')||d.includes('ativo')) { if (d.includes('nao circ')||d.includes('imobil')) anc+=s; else ac+=s; }
-    else if (c.startsWith('2')||d.includes('passivo')||d.includes('fornec')) { if (d.includes('patrimonio')||d.includes('capital')) pl+=s; else if (d.includes('nao circ')) pnc+=s; else pc+=s; }
-    else if (c.startsWith('3')||d.includes('receita')) rec+=s;
-    else if (c.startsWith('4')||d.includes('custo')) cst+=s;
-    else if (c.startsWith('5')||d.includes('despesa')) desp+=s;
+    if (a.tipo && a.tipo !== 'A') continue;
+    const code = String(a.code).replace(/\D/g,'');
+    const s = Math.abs(a.saldo);
+    const n = code[0];
+    if (n==='1') { if (code.startsWith('12')) anc+=s; else ac+=s; }
+    else if (n==='2') { if (code.startsWith('23')) pl+=s; else if (code.startsWith('22')) pnc+=s; else pc+=s; }
+    else if (n==='3') desp+=s;
+    else if (n==='4') { if (a.saldo<0) rec+=s; }
   }
-  return { receita:rec, custos:cst, despesas:desp, resultado:rec-cst-desp, ativoCirculante:ac, ativoNaoCirculante:anc, passivoCirculante:pc, passivoNaoCirculante:pnc, patrimonioLiquido:pl };
+  return { receita:rec, custos:0, despesas:desp, resultado:rec-desp, ativoCirculante:ac, ativoNaoCirculante:anc, passivoCirculante:pc, passivoNaoCirculante:pnc, patrimonioLiquido:pl };
 }
 function fmt(v) { return 'R$ '+Math.abs(v||0).toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}); }
 </script>
