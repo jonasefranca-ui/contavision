@@ -280,18 +280,27 @@ async function logout() {
 db.auth.onAuthStateChange(async (_e, session) => { if (session?.user) await initApp(session.user); });
 
 async function initApp(user) {
-  const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
-  const company = profile?.company || profile?.name || user.email;
-  document.getElementById('company-tag').textContent = company;
-  document.getElementById('dash-title').textContent = company;
-  const params = new URLSearchParams(location.search);
-  const clientId = params.get('id') || user.id;
-  const { data: bals } = await db.from('balancetes').select('*').eq('client_id', clientId).order('period', { ascending: false });
-  allBalancetes = bals || [];
-  document.getElementById('auth-screen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  buildPeriodBar();
-  buildEvolucaoChart();
+  try {
+    console.log('initApp iniciado para:', user.email);
+    const { data: profile, error: profErr } = await db.from('profiles').select('*').eq('id', user.id).single();
+    console.log('Profile:', profile, profErr);
+    const company = profile?.company || profile?.name || user.email;
+    document.getElementById('company-tag').textContent = company;
+    document.getElementById('dash-title').textContent = company;
+    const params = new URLSearchParams(location.search);
+    const clientId = params.get('id') || user.id;
+    console.log('Buscando balancetes para clientId:', clientId);
+    const { data: bals, error: balErr } = await db.from('balancetes').select('*').eq('client_id', clientId).order('period', { ascending: false });
+    console.log('Balancetes:', bals?.length, balErr);
+    allBalancetes = bals || [];
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    buildPeriodBar();
+    buildEvolucaoChart();
+    console.log('initApp concluído!');
+  } catch(e) {
+    console.error('Erro no initApp:', e);
+  }
 }
 
 function buildPeriodBar() {
