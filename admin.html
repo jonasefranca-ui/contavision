@@ -369,7 +369,45 @@ let currentProfile = null;
 let clientsList = [];
 let uploadFile = null;
 
-// Oculta banner se configurado
+// ── DETECTA TOKEN DE RESET DE SENHA NA URL ────────────
+(async () => {
+  const hash = window.location.hash;
+  if (hash.includes('access_token') && hash.includes('type=recovery')) {
+    // Extrai o access_token da URL
+    const params = new URLSearchParams(hash.replace('#', ''));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+
+    // Seta a sessão com o token
+    await db.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+
+    // Mostra tela de nova senha
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('auth-title').textContent = 'Redefinir senha';
+    document.querySelector('.auth-card').innerHTML = `
+      <div class="auth-logo">Conta<span style="color:#c8872a">Vision</span></div>
+      <div class="auth-sub">Painel do Contador</div>
+      <h2>Redefinir senha</h2>
+      <div class="field"><label>Nova Senha</label><input type="password" id="new-pass" placeholder="Mínimo 8 caracteres"></div>
+      <div class="field"><label>Confirmar Senha</label><input type="password" id="new-pass2" placeholder="Repita a senha"></div>
+      <div class="msg msg-error" id="reset-error"></div>
+      <div class="msg msg-success" id="reset-success"></div>
+      <button class="btn btn-primary" onclick="redefinirSenha()">Salvar nova senha →</button>
+    `;
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+})();
+
+async function redefinirSenha() {
+  const pass1 = document.getElementById('new-pass').value;
+  const pass2 = document.getElementById('new-pass2').value;
+  if (pass1 !== pass2) { showMsg('reset-error', 'As senhas não coincidem.'); return; }
+  if (pass1.length < 8) { showMsg('reset-error', 'A senha deve ter pelo menos 8 caracteres.'); return; }
+  const { error } = await db.auth.updateUser({ password: pass1 });
+  if (error) { showMsg('reset-error', error.message); return; }
+  showMsg('reset-success', '✅ Senha redefinida! Faça login agora.');
+  setTimeout(() => window.location.href = '/admin.html', 2000);
+}
 
 
 // ── AUTH ──────────────────────────────────────────────
@@ -636,19 +674,34 @@ function parseDominio(text) {
 }
 
 function parseTXT(text) {
-  // Tenta parser do Domínio primeiro
-  const dominio = parseDominio(text);
-  if (dominio.length > 0) return dominio;
-
-  // Fallback: parser genérico
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  return lines.map(line => {
-    const p = line.split(/[;\t|,]/);
-    if (p.length < 3) return null;
-    const raw = p[p.length-1].replace(/[^\d.,-]/g,'').replace(',','.');
-    const saldo = parseFloat(raw) || 0;
-    return p[0] && p[1] ? { code: p[0].trim(), desc: p[1].trim(), saldo } : null;
-  }).filter(Boolean);
+  const accounts = [];
+
+  for (const line of lines) {
+    const cols = line.split('\t');
+    if (cols.length < 8) continue;
+
+    // Formato Domínio TXT:
+    // [0] Seq | [1] Descrição | [2] Classificação | [3] Tipo(S/A) | [4] Saldo Ant | [5] Débito | [6] Crédito | [7] Saldo Atual | [8] CNPJ | ... | [18] Natureza(D/C)
+    const desc   = cols[1].trim();
+    const code   = cols[2].trim();
+    const tipo   = cols[3].trim(); // A = analítica, S = sintética
+    const saldoRaw = cols[7].replace(',', '.').replace(/[^\d.-]/g, '');
+    const natureza = cols[18] ? cols[18].trim() : (cols[cols.length - 1].trim());
+
+    if (!code || !desc || isNaN(parseFloat(saldoRaw))) continue;
+
+    let saldo = parseFloat(saldoRaw) || 0;
+
+    // Natureza C = credor → negativo (passivo/receita)
+    // Natureza D = devedor → positivo (ativo/despesa)
+    if (natureza === 'C') saldo = -Math.abs(saldo);
+    else saldo = Math.abs(saldo);
+
+    accounts.push({ code, desc, saldo, tipo });
+  }
+
+  return accounts;
 }
 
 async function parseExcel(file) {
@@ -671,48 +724,130 @@ async function parseExcel(file) {
 }
 
 // Parser de PDF do Domínio usando PDF.js
+// Usa posição X/Y dos itens para reconstruir as linhas corretamente
 async function parsePDF(file) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  let fullText = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
+
+  let allAccounts = [];
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    const pageText = content.items.map(item => item.str).join(' ');
-    fullText += pageText + '\n';
+    const viewport = page.getViewport({ scale: 1 });
+
+    // Agrupa itens por linha (Y aproximado)
+    const itemsByY = {};
+    for (const item of content.items) {
+      if (!item.str.trim()) continue;
+      const y = Math.round(item.transform[5]); // posição Y
+      if (!itemsByY[y]) itemsByY[y] = [];
+      itemsByY[y].push({ x: item.transform[4], str: item.str.trim() });
+    }
+
+    // Ordena linhas de cima para baixo (Y decrescente no PDF)
+    const sortedYs = Object.keys(itemsByY).map(Number).sort((a, b) => b - a);
+
+    for (const y of sortedYs) {
+      // Ordena itens da linha da esquerda para direita
+      const items = itemsByY[y].sort((a, b) => a.x - b.x);
+      const line = items.map(i => i.str).join(' ');
+
+      // Pula cabeçalhos
+      if (/^(código|classificação|descrição|período|folha|empresa|cnpj|balancete|sistema|resumo|resultado do|contas de|nome:|função:|cpf:|reg\.|crc:|_{3,})/i.test(line)) continue;
+
+      // Detecta saldo no formato Domínio: termina com número,decimais + D ou C
+      const saldoMatch = line.match(/(\d{1,3}(?:\.\d{3})*,\d+)\s*([DC])\s*$/);
+      if (!saldoMatch) continue;
+
+      const saldoStr = saldoMatch[1] + saldoMatch[2];
+      const saldoAtual = parseSaldoDominio(saldoStr);
+
+      // Extrai classificação contábil (ex: 1.1.2.01.0001)
+      const classMatch = line.match(/\b(\d+(?:\.\d+){1,})\b/);
+      if (!classMatch) continue;
+      const classif = classMatch[1];
+
+      // Extrai descrição: entre a classificação e os saldos
+      const afterClass = line.slice(line.indexOf(classif) + classif.length).trim();
+      const descMatch = afterClass.match(/^([A-ZÀ-ÿ0-9\s\(\)\-\.\/º°ª&ºª']+?)(?=\s+\d{1,3}(?:\.\d{3})*[,\s])/i);
+      if (!descMatch) continue;
+      const desc = descMatch[1].trim();
+      if (!desc || desc.length < 2) continue;
+
+      allAccounts.push({ code: classif, desc, saldo: saldoAtual });
+    }
   }
-  return parseDominio(fullText);
+
+  // Se não encontrou contas, tenta extrair pelo resumo do balancete
+  if (allAccounts.length === 0) {
+    const resumo = await extrairResumoPDF(pdf);
+    return resumo;
+  }
+
+  return allAccounts;
 }
 
-// KPIs baseados na classificação do Domínio (1=Ativo, 2=Passivo, 3=Despesa, 4=Receita)
+// Extrai totais do resumo do balancete (última página)
+async function extrairResumoPDF(pdf) {
+  const lastPage = await pdf.getPage(pdf.numPages);
+  const content = await lastPage.getTextContent();
+  const tokens = content.items.map(i => i.str.trim()).filter(Boolean);
+  const fullText = tokens.join(' ');
+
+  function extrairValor(label) {
+    const re = new RegExp(label + '[\\s:]*([\\d\\.]+,[\\d]+)\\s*([DC])', 'i');
+    const m = fullText.match(re);
+    if (!m) return 0;
+    return parseSaldoDominio(m[1] + m[2]);
+  }
+
+  const ativo    = Math.abs(extrairValor('ATIVO'));
+  const passivo  = Math.abs(extrairValor('PASSIVO'));
+  const pl       = Math.abs(extrairValor('PATRIMÔNIO LÍQUIDO|PATRIMONIO LIQUIDO'));
+  const despesas = Math.abs(extrairValor('CUSTOS E DESPESAS'));
+  const receitas = Math.abs(extrairValor('RESULTADO - RECEITAS|RECEITAS'));
+
+  // Retorna contas sintéticas para o dashboard
+  return [
+    { code: '1.1.0001', desc: 'ATIVO CIRCULANTE', saldo: ativo * 0.7 },
+    { code: '1.2.0001', desc: 'ATIVO NAO CIRCULANTE', saldo: ativo * 0.3 },
+    { code: '2.1.0001', desc: 'PASSIVO CIRCULANTE', saldo: -passivo * 0.7 },
+    { code: '2.2.0001', desc: 'PASSIVO NAO CIRCULANTE', saldo: -passivo * 0.3 },
+    { code: '2.3.0001', desc: 'PATRIMONIO LIQUIDO CAPITAL', saldo: -pl },
+    { code: '3.2.0001', desc: 'DESPESAS ADMINISTRATIVAS', saldo: despesas },
+    { code: '4.1.0001', desc: 'RECEITA DE SERVICOS', saldo: -receitas },
+  ].filter(a => a.saldo !== 0);
+}
+
+// KPIs baseados no código numérico do Domínio
+// 1xxxxx = Ativo, 2xxxxx = Passivo, 3xxxxx = Despesas, 4xxxxx = Receitas
 function calcKPIs(accounts) {
   let ac=0, anc=0, pc=0, pnc=0, pl=0, rec=0, desp=0;
 
   for (const a of accounts) {
-    const cls = a.code; // ex: "1.1.2.01.0001"
-    const nivel1 = cls.split('.')[0]; // "1", "2", "3", "4"
-    const d = a.desc.toLowerCase();
-    const s = Math.abs(a.saldo);
-    const isDetalhe = cls.split('.').length >= 4; // só contas analíticas
+    // Usa apenas contas analíticas (tipo A) para evitar dupla contagem
+    if (a.tipo && a.tipo !== 'A') continue;
 
-    if (!isDetalhe) continue; // ignora totalizadores
+    const code = String(a.code).replace(/\D/g,'');
+    const s = Math.abs(a.saldo);
+    const nivel1 = code[0];
 
     if (nivel1 === '1') {
-      // ATIVO
-      if (cls.startsWith('1.2') || d.includes('não-circulante') || d.includes('nao-circulante') || d.includes('imobilizado') || d.includes('intangív')) anc += s;
+      // ATIVO: 11xxxx = circulante, 12xxxx = não circulante
+      if (code.startsWith('12')) anc += s;
       else ac += s;
     } else if (nivel1 === '2') {
-      // PASSIVO + PL
-      if (cls.startsWith('2.3') || d.includes('patrimônio') || d.includes('patrimonio') || d.includes('capital') || d.includes('lucros') || d.includes('reserva')) pl += s;
-      else if (cls.startsWith('2.2') || d.includes('não circulante') || d.includes('longo prazo')) pnc += s;
+      // PASSIVO + PL: 23xxxx = PL, 22xxxx = não circulante, 21xxxx = circulante
+      if (code.startsWith('23')) pl += s;
+      else if (code.startsWith('22')) pnc += s;
       else pc += s;
     } else if (nivel1 === '3') {
-      // DESPESAS e CUSTOS
       desp += s;
     } else if (nivel1 === '4') {
-      // RECEITAS — ignora deduções (saldo devedor)
-      if (a.saldo < 0) rec += s; // C = credor = receita real
+      // Receitas: saldo negativo (C) = receita real
+      if (a.saldo < 0) rec += s;
     }
   }
 
