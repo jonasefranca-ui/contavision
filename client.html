@@ -264,8 +264,10 @@ async function login() {
   const pass = document.getElementById('a-pass').value;
   const err = document.getElementById('a-err');
   err.style.display = 'none';
+  console.log('Tentando login com:', email);
   const { data, error } = await db.auth.signInWithPassword({ email, password: pass });
-  if (error) { err.textContent = 'E-mail ou senha incorretos.'; err.style.display = 'block'; return; }
+  console.log('Resultado:', error?.message || 'sem erro', data?.user?.email || 'sem usuário');
+  if (error) { err.textContent = error.message; err.style.display = 'block'; return; }
   await initApp(data.user);
 }
 
