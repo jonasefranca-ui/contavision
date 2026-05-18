@@ -277,29 +277,36 @@ async function logout() {
   document.getElementById('auth-screen').style.display = 'flex';
 }
 
-db.auth.onAuthStateChange(async (_e, session) => { if (session?.user) await initApp(session.user); });
+let appInitialized = false;
+
+db.auth.onAuthStateChange(async (_e, session) => {
+  if (session?.user && !appInitialized) {
+    appInitialized = true;
+    await initApp(session.user);
+  }
+});
 
 async function initApp(user) {
   try {
-    console.log('initApp iniciado para:', user.email);
-    const { data: profile, error: profErr } = await db.from('profiles').select('*').eq('id', user.id).single();
-    console.log('Profile:', profile, profErr);
-    const company = profile?.company || profile?.name || user.email;
+    console.log('initApp:', user.email);
+    const company = user.email;
     document.getElementById('company-tag').textContent = company;
-    document.getElementById('dash-title').textContent = company;
+    document.getElementById('dash-title').textContent = 'Painel Financeiro';
+
     const params = new URLSearchParams(location.search);
     const clientId = params.get('id') || user.id;
-    console.log('Buscando balancetes para clientId:', clientId);
+    console.log('Buscando balancetes para:', clientId);
+
     const { data: bals, error: balErr } = await db.from('balancetes').select('*').eq('client_id', clientId).order('period', { ascending: false });
-    console.log('Balancetes:', bals?.length, balErr);
+    console.log('Balancetes:', bals?.length, balErr?.message);
+
     allBalancetes = bals || [];
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     buildPeriodBar();
     buildEvolucaoChart();
-    console.log('initApp concluído!');
   } catch(e) {
-    console.error('Erro no initApp:', e);
+    console.error('Erro initApp:', e);
   }
 }
 
