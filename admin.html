@@ -6,6 +6,7 @@
 <title>ContaVision — Painel do Contador</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -25,13 +26,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Sora', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
 
-/* ── CONFIG BANNER ── */
-#config-banner {
-  background: #fff3cd; border-bottom: 2px solid #ffc107;
-  padding: 1rem 2rem; font-size: 0.88rem; color: #856404;
-  display: flex; align-items: center; gap: 0.5rem;
-}
-#config-banner code { background: rgba(0,0,0,0.08); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85rem; }
+
 
 /* ── AUTH ── */
 #auth-screen {
@@ -189,10 +184,7 @@ tr:hover td { background: var(--surface2); }
 </head>
 <body>
 
-<!-- CONFIG BANNER -->
-<div id="config-banner">
-  ⚠️ Configure suas credenciais Supabase: abra este arquivo e substitua <code>SEU_SUPABASE_URL</code> e <code>SEU_SUPABASE_ANON_KEY</code> pelos valores do seu projeto.
-</div>
+
 
 <!-- ═══ AUTH ═══ -->
 <div id="auth-screen">
@@ -277,7 +269,7 @@ tr:hover td { background: var(--surface2); }
           </div>
 
           <div class="drop-zone" id="up-drop">
-            <input type="file" id="up-file" accept=".txt,.csv,.xlsx,.xls">
+            <input type="file" id="up-file" accept=".txt,.csv,.xlsx,.xls,.pdf">
             <div class="drop-icon">📂</div>
             <div class="drop-text"><strong>Clique ou arraste o balancete</strong><br><span style="font-size:0.82rem">TXT, CSV, XLSX ou XLS exportado do Domínio</span></div>
             <div id="up-file-badge"></div>
@@ -308,9 +300,30 @@ tr:hover td { background: var(--surface2); }
 
 <!-- MODALS -->
 <div class="modal-overlay" id="modal-add-client">
-  <div class="modal">
+  <div class="modal" style="max-width:540px">
     <h3>Cadastrar Novo Cliente</h3>
-    <p style="font-size:0.85rem;color:var(--ink2);margin-bottom:1.5rem">Um e-mail com acesso será enviado ao cliente. Ele poderá ver os dashboards dele.</p>
+
+    <!-- BUSCA POR CNPJ -->
+    <div style="margin-bottom:1.5rem">
+      <div style="font-size:0.78rem;font-weight:600;color:var(--ink2);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem">Atalho: Buscar pelo CNPJ</div>
+      <div style="display:flex;gap:0.5rem">
+        <input type="text" id="cnpj-busca" placeholder="00.000.000/0001-00" maxlength="18"
+          style="flex:1;padding:0.8rem 1rem;border:1.5px solid var(--border);border-radius:10px;font-family:Sora,sans-serif;font-size:0.92rem;color:var(--ink);background:var(--surface2);outline:none"
+          oninput="mascararCNPJ(this)" onkeydown="if(event.key==='Enter') buscarCNPJ()">
+        <button onclick="buscarCNPJ()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:0 1.2rem;font-family:Sora,sans-serif;font-size:0.9rem;font-weight:600;cursor:pointer;white-space:nowrap">
+          🔍 Buscar
+        </button>
+      </div>
+      <div id="cnpj-loading" style="display:none;font-size:0.82rem;color:var(--accent);margin-top:0.5rem">⏳ Consultando Receita Federal...</div>
+      <div id="cnpj-msg" style="display:none;font-size:0.82rem;margin-top:0.5rem"></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.2rem">
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      <div style="font-size:0.75rem;color:var(--ink2)">ou preencha manualmente</div>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+
     <div class="field"><label>Nome da Empresa</label><input type="text" id="nc-company" placeholder="Padaria do João Ltda"></div>
     <div class="field"><label>Nome do Responsável</label><input type="text" id="nc-name" placeholder="João da Silva"></div>
     <div class="field"><label>CNPJ</label><input type="text" id="nc-cnpj" placeholder="00.000.000/0001-00"></div>
@@ -320,7 +333,7 @@ tr:hover td { background: var(--surface2); }
     <div class="msg msg-success" id="nc-success"></div>
     <div class="modal-footer">
       <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-client')">Cancelar</button>
-      <button class="btn btn-primary btn-sm" onclick="createClient()">Cadastrar Cliente</button>
+      <button class="btn btn-primary btn-sm" onclick="cadastrarCliente()">Cadastrar Cliente</button>
     </div>
   </div>
 </div>
@@ -348,8 +361,8 @@ const SUPABASE_URL  = 'https://ebgmrbklckecjgdqxkpx.supabase.co';
 const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImViZ21yYmtsY2tlY2pnZHF4a3B4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkwNDc3MzIsImV4cCI6MjA5NDYyMzczMn0.FKHTCBNMfl3qtllT0gHXjByGtbyPJ738P4jkXIB5wa4';
 // ══════════════════════════════════════════════════════
 
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+const { createClient: supabaseCreateClient } = supabase;
+const db = supabaseCreateClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 let currentProfile = null;
@@ -357,7 +370,7 @@ let clientsList = [];
 let uploadFile = null;
 
 // Oculta banner se configurado
-if (!SUPABASE_URL.includes('SEU_')) document.getElementById('config-banner').style.display = 'none';
+
 
 // ── AUTH ──────────────────────────────────────────────
 async function signIn() {
@@ -435,7 +448,7 @@ function populateClientSelects() {
   document.getElementById('hist-filter').innerHTML = '<option value="">Todos os clientes</option>' + opts;
 }
 
-async function createClient() {
+async function cadastrarCliente() {
   const company = document.getElementById('nc-company').value.trim();
   const name    = document.getElementById('nc-name').value.trim();
   const cnpj    = document.getElementById('nc-cnpj').value.trim();
@@ -482,7 +495,9 @@ async function uploadBalancete() {
 
   let accounts = [];
   const ext = uploadFile.name.split('.').pop().toLowerCase();
-  if (ext === 'txt' || ext === 'csv') {
+  if (ext === 'pdf') {
+    accounts = await parsePDF(uploadFile);
+  } else if (ext === 'txt' || ext === 'csv') {
     const text = await uploadFile.text();
     accounts = parseTXT(text);
   } else {
@@ -565,8 +580,67 @@ function viewClientHistory(id, company) {
   loadHistory();
 }
 
-// ── PARSE ─────────────────────────────────────────────
+// ── PARSE DOMÍNIO ─────────────────────────────────────
+
+// Converte valor "1.234.567,89D" ou "1.234.567,89C" em número
+// D = devedor (positivo para ativo/despesa), C = credor (positivo para passivo/receita)
+function parseSaldoDominio(str) {
+  if (!str) return 0;
+  const s = str.trim();
+  const natureza = s.slice(-1).toUpperCase(); // 'D' ou 'C'
+  const num = parseFloat(s.replace(/\./g,'').replace(',','.').replace(/[^\d.-]/g,'')) || 0;
+  return natureza === 'C' ? -num : num; // C = credor = negativo na convenção contábil
+}
+
+// Parser principal para TXT/PDF do Domínio
+// Formato: Código  Classificação  Descrição  Saldo Anterior  Débito  Crédito  Saldo Atual
+function parseDominio(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const accounts = [];
+
+  for (const line of lines) {
+    // Pula linhas de cabeçalho e rodapé
+    if (/^(código|classificação|descrição|período|folha|empresa|cnpj|balancete|sistema|ativo|passivo|resumo|resultado|contas|nome:|função:|cpf:|reg\.|crc)/i.test(line)) continue;
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(line)) continue;
+
+    // Tenta detectar linha com saldo no formato Domínio: termina com \d+,\d+[DC]
+    const saldoMatch = line.match(/(\d{1,3}(?:\.\d{3})*,\d+[DC])\s*$/);
+    if (!saldoMatch) continue;
+
+    const saldoAtual = parseSaldoDominio(saldoMatch[1]);
+
+    // Extrai classificação (ex: 1.1.2.01.0001) e descrição
+    // Formato típico: "504 1.1.2.01.0001 CLIENTES DIVERSOS 7.505.713,63D 558.911,71 0,00 8.064.625,34D"
+    const classMatch = line.match(/\b(\d+(?:\.\d+)+)\b/);
+    const classif = classMatch ? classMatch[1] : '';
+
+    // Descrição: texto entre a classificação e os números de saldo
+    let desc = '';
+    if (classif) {
+      const afterClass = line.slice(line.indexOf(classif) + classif.length).trim();
+      // Pega tudo antes do primeiro número com vírgula (saldo anterior)
+      const descMatch = afterClass.match(/^([A-ZÀ-Ú\s\(\)\-\.\/º°ª&]+?)(?=\s+\d{1,3}(?:\.\d{3})*,\d)/i);
+      desc = descMatch ? descMatch[1].trim() : '';
+    }
+
+    if (!classif || !desc) continue;
+
+    accounts.push({
+      code: classif,
+      desc: desc,
+      saldo: saldoAtual
+    });
+  }
+
+  return accounts;
+}
+
 function parseTXT(text) {
+  // Tenta parser do Domínio primeiro
+  const dominio = parseDominio(text);
+  if (dominio.length > 0) return dominio;
+
+  // Fallback: parser genérico
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   return lines.map(line => {
     const p = line.split(/[;\t|,]/);
@@ -596,17 +670,54 @@ async function parseExcel(file) {
   });
 }
 
-function calcKPIs(accounts) {
-  let rec=0, cst=0, desp=0, ac=0, anc=0, pc=0, pnc=0, pl=0;
-  for (const a of accounts) {
-    const c = a.code.replace(/\D/g,''); const d = a.desc.toLowerCase(); const s = Math.abs(a.saldo);
-    if (c.startsWith('1')||d.includes('ativo')) { if (d.includes('nao circ')||d.includes('imobil')) anc+=s; else ac+=s; }
-    else if (c.startsWith('2')||d.includes('passivo')||d.includes('fornec')) { if (d.includes('patrimonio')||d.includes('capital')) pl+=s; else if (d.includes('nao circ')) pnc+=s; else pc+=s; }
-    else if (c.startsWith('3')||d.includes('receita')) rec+=s;
-    else if (c.startsWith('4')||d.includes('custo')) cst+=s;
-    else if (c.startsWith('5')||d.includes('despesa')) desp+=s;
+// Parser de PDF do Domínio usando PDF.js
+async function parsePDF(file) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
   }
-  return { receita:rec, custos:cst, despesas:desp, resultado:rec-cst-desp, ativoCirculante:ac, ativoNaoCirculante:anc, passivoCirculante:pc, passivoNaoCirculante:pnc, patrimonioLiquido:pl };
+  return parseDominio(fullText);
+}
+
+// KPIs baseados na classificação do Domínio (1=Ativo, 2=Passivo, 3=Despesa, 4=Receita)
+function calcKPIs(accounts) {
+  let ac=0, anc=0, pc=0, pnc=0, pl=0, rec=0, desp=0;
+
+  for (const a of accounts) {
+    const cls = a.code; // ex: "1.1.2.01.0001"
+    const nivel1 = cls.split('.')[0]; // "1", "2", "3", "4"
+    const d = a.desc.toLowerCase();
+    const s = Math.abs(a.saldo);
+    const isDetalhe = cls.split('.').length >= 4; // só contas analíticas
+
+    if (!isDetalhe) continue; // ignora totalizadores
+
+    if (nivel1 === '1') {
+      // ATIVO
+      if (cls.startsWith('1.2') || d.includes('não-circulante') || d.includes('nao-circulante') || d.includes('imobilizado') || d.includes('intangív')) anc += s;
+      else ac += s;
+    } else if (nivel1 === '2') {
+      // PASSIVO + PL
+      if (cls.startsWith('2.3') || d.includes('patrimônio') || d.includes('patrimonio') || d.includes('capital') || d.includes('lucros') || d.includes('reserva')) pl += s;
+      else if (cls.startsWith('2.2') || d.includes('não circulante') || d.includes('longo prazo')) pnc += s;
+      else pc += s;
+    } else if (nivel1 === '3') {
+      // DESPESAS e CUSTOS
+      desp += s;
+    } else if (nivel1 === '4') {
+      // RECEITAS — ignora deduções (saldo devedor)
+      if (a.saldo < 0) rec += s; // C = credor = receita real
+    }
+  }
+
+  const resultado = rec - desp;
+  return { receita: rec, custos: 0, despesas: desp, resultado, ativoCirculante: ac, ativoNaoCirculante: anc, passivoCirculante: pc, passivoNaoCirculante: pnc, patrimonioLiquido: pl };
 }
 
 // ── UI HELPERS ────────────────────────────────────────
@@ -620,7 +731,9 @@ function showPanel(name) {
   if (name === 'history') loadHistory();
 }
 
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 function showRegister() { openModal('modal-register'); }
 function showMsg(id, msg) {
@@ -628,6 +741,59 @@ function showMsg(id, msg) {
   if (!el) return;
   el.textContent = msg;
   el.style.display = msg ? 'block' : 'none';
+}
+
+// ── BUSCA CNPJ RECEITA FEDERAL ────────────────────────
+function mascararCNPJ(input) {
+  let v = input.value.replace(/\D/g, '').slice(0, 14);
+  v = v.replace(/^(\d{2})(\d)/, '$1.$2');
+  v = v.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+  v = v.replace(/\.(\d{3})(\d)/, '.$1/$2');
+  v = v.replace(/(\d{4})(\d)/, '$1-$2');
+  input.value = v;
+}
+
+async function buscarCNPJ() {
+  const raw = document.getElementById('cnpj-busca').value.replace(/\D/g, '');
+  const loading = document.getElementById('cnpj-loading');
+  const msg = document.getElementById('cnpj-msg');
+
+  if (raw.length !== 14) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = '⚠️ Digite um CNPJ válido com 14 dígitos.';
+    return;
+  }
+
+  loading.style.display = 'block';
+  msg.style.display = 'none';
+
+  try {
+    const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
+    if (!res.ok) throw new Error('CNPJ não encontrado');
+    const d = await res.json();
+
+    // Preenche os campos
+    document.getElementById('nc-company').value = d.razao_social || '';
+    document.getElementById('nc-cnpj').value = document.getElementById('cnpj-busca').value;
+    if (d.email) document.getElementById('nc-email').value = d.email.toLowerCase();
+
+    // Nome do responsável (QSA)
+    if (d.qsa && d.qsa.length > 0) {
+      document.getElementById('nc-name').value = d.qsa[0].nome_socio || '';
+    }
+
+    msg.style.display = 'block';
+    msg.style.color = 'var(--accent)';
+    msg.textContent = `✅ ${d.razao_social} encontrada! Confira os campos abaixo.`;
+
+  } catch (err) {
+    msg.style.display = 'block';
+    msg.style.color = 'var(--danger)';
+    msg.textContent = '❌ CNPJ não encontrado. Preencha manualmente.';
+  }
+
+  loading.style.display = 'none';
 }
 </script>
 </body>
